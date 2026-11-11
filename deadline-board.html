@@ -1,0 +1,686 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>締切カウントダウンボード</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif; background: #f4f4f2; color: #222; line-height: 1.6; }
+  header { background: #222; color: #fff; padding: 18px 16px 14px; }
+  header h1 { margin: 0; font-size: 22px; line-height: 1.3; }
+  header p { margin: 8px 0 0; }
+  .summary { display: inline-block; background: #ff8c00; color: #fff; font-weight: 700; border-radius: 999px; padding: 6px 12px; }
+  main { max-width: 760px; margin: 0 auto; padding: 16px 12px 48px; }
+  section { background: #fff; border: 1px solid #ddd; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  h2 { margin: 0 0 12px; font-size: 18px; }
+  label { display: block; font-weight: 700; margin: 12px 0 4px; }
+  input, select, textarea { width: 100%; font-size: 16px; padding: 12px; border: 1px solid #bbb; border-radius: 8px; background: #fff; }
+  textarea { min-height: 72px; resize: vertical; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .hint { color: #666; font-size: 13px; font-weight: 400; }
+  .error { color: #b00020; font-weight: 700; min-height: 1.5em; margin: 8px 0 0; }
+  button { font-size: 16px; min-height: 48px; padding: 10px 16px; border-radius: 10px; border: 1px solid #888; background: #fff; cursor: pointer; }
+  button.primary { background: #1565c0; border-color: #1565c0; color: #fff; font-weight: 700; }
+  button.danger { background: #b00020; border-color: #b00020; color: #fff; }
+  button.armed { background: #7f0000; border-color: #7f0000; }
+  button:disabled { opacity: .5; cursor: default; }
+  .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+  .toolbar > div { flex: 1 1 160px; }
+  .toolbar label { margin-top: 0; }
+  .check { display: flex; align-items: center; gap: 8px; font-weight: 700; min-height: 48px; }
+  .check input { width: 22px; height: 22px; }
+  .card { border: 2px solid #ccc; border-radius: 12px; padding: 14px; margin-bottom: 12px; background: #fff; }
+  .card.danger { border-color: #d32f2f; background: #ffebee; }
+  .card.warn7 { border-color: #ef6c00; background: #fff3e0; }
+  .card.warn30 { border-color: #f9a825; background: #fffde7; }
+  .card.done { background: #eee; color: #777; border-color: #bbb; }
+  .card-top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+  .card h3 { margin: 0; font-size: 18px; line-height: 1.4; overflow-wrap: anywhere; }
+  .days { font-size: 28px; font-weight: 800; white-space: nowrap; line-height: 1.1; }
+  .card.danger .days { color: #b00020; }
+  .card.warn7 .days { color: #bf5b00; }
+  .meta { margin: 8px 0 0; font-size: 15px; }
+  .memo { margin: 8px 0 0; font-size: 15px; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .card .actions { margin-top: 12px; }
+  .card .actions button { min-height: 44px; font-size: 15px; }
+  .card a { color: #1565c0; }
+  .empty { color: #666; }
+  @media (max-width: 520px) { .row { grid-template-columns: 1fr; } .days { font-size: 24px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>締切カウントダウンボード</h1>
+  <p><span class="summary" id="summary">7日以内の締切 0件</span></p>
+  <p class="hint" style="color:#ddd">データはこのブラウザの localStorage にだけ保存されます。外部送信はありません。</p>
+</header>
+<main>
+  <section aria-label="表示と書き出し">
+    <h2>表示・書き出し</h2>
+    <div class="toolbar">
+      <div>
+        <label for="filterCategory">カテゴリで絞り込み</label>
+        <select id="filterCategory"></select>
+      </div>
+      <label class="check"><input type="checkbox" id="hideCompleted"> 完了分を隠す</label>
+    </div>
+    <div class="actions">
+      <button type="button" id="exportJsonBtn">JSON書き出し</button>
+      <button type="button" id="exportTextBtn">テキスト書き出し</button>
+      <button type="button" id="importBtn">JSON読み込み</button>
+      <input type="file" id="importFile" accept=".json,application/json" hidden>
+    </div>
+  </section>
+
+  <section aria-label="締切の追加と編集">
+    <h2 id="formTitle">締切を追加</h2>
+    <form id="itemForm">
+      <label for="titleInput">タイトル（必須・60字まで）</label>
+      <input id="titleInput" type="text" maxlength="60" required autocomplete="off" placeholder="例：Fish Audio 無料クレジット消滅">
+
+      <div class="row">
+        <div>
+          <label for="dateInput">締切日（必須）</label>
+          <input id="dateInput" type="date" required>
+        </div>
+        <div>
+          <label for="timeInput">時刻（任意・未入力は終日）</label>
+          <input id="timeInput" type="time">
+        </div>
+      </div>
+
+      <label for="categorySelect">カテゴリ</label>
+      <select id="categorySelect">
+        <option value="お金">お金</option>
+        <option value="アカウント・手続き">アカウント・手続き</option>
+        <option value="サブスク・クレジット">サブスク・クレジット</option>
+        <option value="その他">その他</option>
+      </select>
+
+      <div id="customCategoryWrap" hidden>
+        <label for="customCategoryInput">カテゴリ（自由記入・30字まで）</label>
+        <input id="customCategoryInput" type="text" maxlength="30" autocomplete="off" placeholder="例：仕事">
+      </div>
+
+      <label for="repeatSelect">繰り返し</label>
+      <select id="repeatSelect">
+        <option value="none">なし</option>
+        <option value="monthly">毎月</option>
+        <option value="yearly">毎年</option>
+      </select>
+
+      <label for="memoInput">メモ（任意・200字まで）</label>
+      <textarea id="memoInput" maxlength="200" placeholder="例：リフレッシュで残高は消える"></textarea>
+
+      <p class="error" id="formError" role="alert"></p>
+      <div class="actions">
+        <button class="primary" type="submit" id="saveBtn">追加する</button>
+        <button type="button" id="cancelEditBtn" hidden>編集をやめる</button>
+      </div>
+    </form>
+  </section>
+
+  <section aria-label="締切一覧">
+    <h2>締切一覧</h2>
+    <div id="list"></div>
+    <p class="empty" id="emptyMsg" hidden>表示する締切がありません。</p>
+  </section>
+</main>
+
+<script>
+"use strict";
+var LS_KEY = "deadlineBoard.v1";
+var CATEGORIES = ["お金", "アカウント・手続き", "サブスク・クレジット", "その他"];
+var REPEATS = ["none", "monthly", "yearly"];
+
+var items = [];
+var editingId = null;
+var deleteArmedId = null;
+var deleteArmedTimer = null;
+var filterCategory = "すべて";
+var hideCompleted = false;
+
+function $(id) { return document.getElementById(id); }
+
+function sanitize(value) {
+  return String(value == null ? "" : value).replace(/[\u0000-\u001F\u007F]/g, "");
+}
+
+function newId() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) { return crypto.randomUUID(); }
+  return "id-" + Date.now().toString(36) + "-" + Math.floor(Math.random() * 1000000).toString(36);
+}
+
+function isValidDateString(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) { return false; }
+  var parts = value.split("-");
+  var y = Number(parts[0]);
+  var m = Number(parts[1]);
+  var d = Number(parts[2]);
+  if (m < 1 || m > 12 || d < 1 || d > 31) { return false; }
+  var dt = new Date(y, m - 1, d);
+  return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d;
+}
+
+function isValidTimeString(value) {
+  if (value === "") { return true; }
+  if (!/^\d{2}:\d{2}$/.test(value)) { return false; }
+  var parts = value.split(":");
+  var h = Number(parts[0]);
+  var mi = Number(parts[1]);
+  return h >= 0 && h <= 23 && mi >= 0 && mi <= 59;
+}
+
+function validateItem(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) { return null; }
+  var title = sanitize(raw.title).trim();
+  if (title.length < 1 || title.length > 60) { return null; }
+  var date = sanitize(raw.date).trim();
+  if (!isValidDateString(date)) { return null; }
+  var time = sanitize(raw.time == null ? "" : raw.time).trim();
+  if (!isValidTimeString(time)) { return null; }
+  var category = sanitize(raw.category).trim();
+  if (category.length < 1 || category.length > 30) { return null; }
+  var repeat = sanitize(raw.repeat).trim();
+  if (REPEATS.indexOf(repeat) === -1) { return null; }
+  var memo = sanitize(raw.memo == null ? "" : raw.memo);
+  if (memo.length > 200) { return null; }
+  var id = typeof raw.id === "string" && raw.id.length > 0 ? sanitize(raw.id).trim() : newId();
+  if (id.length === 0) { id = newId(); }
+  return {
+    id: id,
+    title: title,
+    date: date,
+    time: time,
+    category: category,
+    repeat: repeat,
+    memo: memo,
+    completed: repeat === "none" ? raw.completed === true : false,
+    doneThrough: repeat !== "none" && typeof raw.doneThrough === "string" && isValidDateString(raw.doneThrough) ? raw.doneThrough : ""
+  };
+}
+
+function seedItems() {
+  return [];
+}
+
+function loadItems() {
+  var raw = null;
+  try { raw = localStorage.getItem(LS_KEY); } catch (e) { raw = null; }
+  if (raw === null) {
+    items = seedItems();
+    saveItems();
+    return;
+  }
+  var parsed = null;
+  try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
+  if (!Array.isArray(parsed)) {
+    items = seedItems();
+    saveItems();
+    return;
+  }
+  var valid = [];
+  var seen = {};
+  parsed.forEach(function (entry) {
+    var item = validateItem(entry);
+    if (item && !seen[item.id]) { seen[item.id] = true; valid.push(item); }
+  });
+  items = valid;
+}
+
+function saveItems() {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(items)); } catch (e) { /* 保存できない環境では表示のみ続ける */ }
+}
+
+function lastDayOfMonth(y, m) {
+  return new Date(y, m, 0).getDate();
+}
+
+function makeOccurrence(y, m, day, time) {
+  var clamped = Math.min(day, lastDayOfMonth(y, m));
+  if (time) {
+    var parts = time.split(":");
+    return new Date(y, m - 1, clamped, Number(parts[0]), Number(parts[1]), 0, 0);
+  }
+  return new Date(y, m - 1, clamped, 23, 59, 59, 0);
+}
+
+function nextOccurrence(item, now) {
+  var parts = item.date.split("-");
+  var y = Number(parts[0]);
+  var m = Number(parts[1]);
+  var d = Number(parts[2]);
+  var cur = makeOccurrence(y, m, d, item.time);
+  if (item.repeat === "none") { return cur; }
+  var guard = 0;
+  while ((cur <= now || (item.doneThrough && formatDate(cur) <= item.doneThrough)) && guard < 1200) {
+    guard++;
+    if (item.repeat === "monthly") {
+      m++;
+      if (m > 12) { m = 1; y++; }
+    } else {
+      y++;
+    }
+    cur = makeOccurrence(y, m, d, item.time);
+  }
+  return cur;
+}
+
+function startOfDay(dt) {
+  return new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+}
+
+function diffDays(effective, now) {
+  var ms = startOfDay(effective).getTime() - startOfDay(now).getTime();
+  return Math.round(ms / 86400000);
+}
+
+function remainingLabel(item, effective, now) {
+  var diff = diffDays(effective, now);
+  if (diff > 0) { return "あと" + diff + "日"; }
+  if (diff < 0) { return (-diff) + "日経過"; }
+  if (now > effective) { return "期限切れ"; }
+  return "今日まで";
+}
+
+function statusClass(item, effective, now) {
+  if (item.completed) { return "done"; }
+  var diff = diffDays(effective, now);
+  if (diff < 0 || (diff === 0 && now > effective)) { return "danger"; }
+  if (diff <= 7) { return "warn7"; }
+  if (diff <= 30) { return "warn30"; }
+  return "";
+}
+
+function formatDate(dt) {
+  function p(n) { return (n < 10 ? "0" : "") + n; }
+  return dt.getFullYear() + "-" + p(dt.getMonth() + 1) + "-" + p(dt.getDate());
+}
+
+function formatTime(dt) {
+  function p(n) { return (n < 10 ? "0" : "") + n; }
+  return p(dt.getHours()) + ":" + p(dt.getMinutes());
+}
+
+function formatDateTimeForDisplay(item, effective) {
+  var base = formatDate(effective);
+  if (item.time) { return base + " " + item.time; }
+  return base + "（終日）";
+}
+
+function repeatLabel(repeat) {
+  if (repeat === "monthly") { return "毎月"; }
+  if (repeat === "yearly") { return "毎年"; }
+  return "なし";
+}
+
+function sortedItems(now) {
+  var decorated = items.map(function (item) {
+    return { item: item, effective: nextOccurrence(item, now) };
+  });
+  decorated.sort(function (a, b) {
+    if (a.item.completed !== b.item.completed) { return a.item.completed ? 1 : -1; }
+    if (a.effective.getTime() !== b.effective.getTime()) { return a.effective.getTime() - b.effective.getTime(); }
+    return a.item.title.localeCompare(b.item.title, "ja");
+  });
+  return decorated;
+}
+
+function gcalUrl(item, effective) {
+  var params = new URLSearchParams();
+  params.set("action", "TEMPLATE");
+  params.set("text", item.title);
+  if (item.time) {
+    var end = new Date(effective.getTime() + 60 * 60 * 1000);
+    var fmt = function (dt) {
+      function p(n) { return (n < 10 ? "0" : "") + n; }
+      return dt.getFullYear() + p(dt.getMonth() + 1) + p(dt.getDate()) + "T" + p(dt.getHours()) + p(dt.getMinutes()) + "00";
+    };
+    params.set("dates", fmt(effective) + "/" + fmt(end));
+  } else {
+    var nextDay = new Date(effective.getFullYear(), effective.getMonth(), effective.getDate() + 1);
+    var fmtDay = function (dt) {
+      function p(n) { return (n < 10 ? "0" : "") + n; }
+      return dt.getFullYear() + p(dt.getMonth() + 1) + p(dt.getDate());
+    };
+    params.set("dates", fmtDay(effective) + "/" + fmtDay(nextDay));
+  }
+  var details = item.memo ? item.memo : "";
+  if (details) { params.set("details", details); }
+  return "https://calendar.google.com/calendar/render?" + params.toString();
+}
+
+function download(filename, text, mime) {
+  var blob = new Blob([text], { type: mime });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+}
+
+function populateFilter() {
+  var select = $("filterCategory");
+  var current = filterCategory;
+  while (select.firstChild) { select.removeChild(select.firstChild); }
+  var options = ["すべて"].concat(CATEGORIES.filter(function (c) { return c !== "その他"; }));
+  items.forEach(function (item) {
+    if (options.indexOf(item.category) === -1) { options.push(item.category); }
+  });
+  options.forEach(function (name) {
+    var opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    select.appendChild(opt);
+  });
+  if (options.indexOf(current) === -1) { current = "すべて"; filterCategory = current; }
+  select.value = current;
+}
+
+function render() {
+  var now = new Date();
+  var decorated = sortedItems(now);
+  var visible = decorated.filter(function (entry) {
+    if (hideCompleted && entry.item.completed) { return false; }
+    if (filterCategory !== "すべて" && entry.item.category !== filterCategory) { return false; }
+    return true;
+  });
+
+  var urgent = 0;
+  var overdue = 0;
+  decorated.forEach(function (entry) {
+    if (entry.item.completed) { return; }
+    var diff = diffDays(entry.effective, now);
+    if (diff < 0 || (diff === 0 && now > entry.effective)) { overdue++; }
+    else if (diff <= 7) { urgent++; }
+  });
+  $("summary").textContent = "7日以内の締切 " + urgent + "件" + (overdue > 0 ? "／期限切れ " + overdue + "件" : "");
+
+  populateFilter();
+
+  var list = $("list");
+  while (list.firstChild) { list.removeChild(list.firstChild); }
+  $("emptyMsg").hidden = visible.length !== 0;
+
+  visible.forEach(function (entry) {
+    var item = entry.item;
+    var effective = entry.effective;
+    var card = document.createElement("article");
+    card.className = "card " + statusClass(item, effective, now);
+
+    var top = document.createElement("div");
+    top.className = "card-top";
+    var title = document.createElement("h3");
+    title.textContent = item.title;
+    var days = document.createElement("div");
+    days.className = "days";
+    days.textContent = remainingLabel(item, effective, now);
+    top.appendChild(title);
+    top.appendChild(days);
+    card.appendChild(top);
+
+    var meta = document.createElement("p");
+    meta.className = "meta";
+    var metaText = formatDateTimeForDisplay(item, effective) + "　｜　" + item.category + "　｜　繰り返し：" + repeatLabel(item.repeat);
+    if (item.completed) { metaText += "　｜　完了"; }
+    meta.textContent = metaText;
+    card.appendChild(meta);
+
+    if (item.memo) {
+      var memo = document.createElement("p");
+      memo.className = "memo";
+      memo.textContent = item.memo;
+      card.appendChild(memo);
+    }
+
+    var actions = document.createElement("div");
+    actions.className = "actions";
+
+    var toggleBtn = document.createElement("button");
+    toggleBtn.type = "button";
+    if (item.repeat === "none") {
+      toggleBtn.textContent = item.completed ? "未完了に戻す" : "完了にする";
+      toggleBtn.addEventListener("click", function () {
+        item.completed = !item.completed;
+        saveItems();
+        render();
+      });
+    } else {
+      toggleBtn.textContent = "今回分を完了";
+      toggleBtn.addEventListener("click", function () {
+        item.doneThrough = formatDate(effective);
+        saveItems();
+        render();
+      });
+    }
+    actions.appendChild(toggleBtn);
+
+    if (item.repeat !== "none" && item.doneThrough) {
+      var undoBtn = document.createElement("button");
+      undoBtn.type = "button";
+      undoBtn.textContent = "完了を取り消す";
+      undoBtn.addEventListener("click", function () {
+        item.doneThrough = "";
+        saveItems();
+        render();
+      });
+      actions.appendChild(undoBtn);
+    }
+
+    var editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.textContent = "編集";
+    editBtn.addEventListener("click", function () { startEdit(item); });
+    actions.appendChild(editBtn);
+
+    var delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "danger";
+    delBtn.textContent = deleteArmedId === item.id ? "本当に削除？" : "削除";
+    if (deleteArmedId === item.id) { delBtn.classList.add("armed"); }
+    delBtn.addEventListener("click", function () {
+      if (deleteArmedId !== item.id) {
+        deleteArmedId = item.id;
+        if (deleteArmedTimer) { clearTimeout(deleteArmedTimer); }
+        deleteArmedTimer = setTimeout(function () { deleteArmedId = null; render(); }, 3000);
+        render();
+        return;
+      }
+      deleteArmedId = null;
+      if (deleteArmedTimer) { clearTimeout(deleteArmedTimer); }
+      items = items.filter(function (x) { return x.id !== item.id; });
+      if (editingId === item.id) { resetForm(); }
+      saveItems();
+      render();
+    });
+    actions.appendChild(delBtn);
+
+    var gcal = document.createElement("a");
+    gcal.href = gcalUrl(item, effective);
+    gcal.target = "_blank";
+    gcal.rel = "noopener";
+    gcal.textContent = "Google カレンダーに追加";
+    actions.appendChild(gcal);
+
+    card.appendChild(actions);
+    list.appendChild(card);
+  });
+}
+
+function resetForm() {
+  editingId = null;
+  $("itemForm").reset();
+  $("customCategoryWrap").hidden = true;
+  $("formTitle").textContent = "締切を追加";
+  $("saveBtn").textContent = "追加する";
+  $("cancelEditBtn").hidden = true;
+  $("formError").textContent = "";
+}
+
+function startEdit(item) {
+  editingId = item.id;
+  $("titleInput").value = item.title;
+  $("dateInput").value = item.date;
+  $("timeInput").value = item.time;
+  if (CATEGORIES.indexOf(item.category) !== -1 && item.category !== "その他") {
+    $("categorySelect").value = item.category;
+    $("customCategoryWrap").hidden = true;
+    $("customCategoryInput").value = "";
+  } else if (item.category === "その他") {
+    $("categorySelect").value = "その他";
+    $("customCategoryWrap").hidden = false;
+    $("customCategoryInput").value = "その他";
+  } else {
+    $("categorySelect").value = "その他";
+    $("customCategoryWrap").hidden = false;
+    $("customCategoryInput").value = item.category;
+  }
+  $("repeatSelect").value = item.repeat;
+  $("memoInput").value = item.memo;
+  $("formTitle").textContent = "締切を編集";
+  $("saveBtn").textContent = "保存する";
+  $("cancelEditBtn").hidden = false;
+  $("formError").textContent = "";
+  $("itemForm").scrollIntoView({ behavior: "smooth", block: "start" });
+  $("titleInput").focus();
+}
+
+function onCategoryChange() {
+  var isOther = $("categorySelect").value === "その他";
+  $("customCategoryWrap").hidden = !isOther;
+}
+
+function onSubmit(event) {
+  event.preventDefault();
+  var errorEl = $("formError");
+  errorEl.textContent = "";
+
+  var title = sanitize($("titleInput").value).trim();
+  var date = sanitize($("dateInput").value).trim();
+  var time = sanitize($("timeInput").value).trim();
+  var category = "";
+  if ($("categorySelect").value === "その他") {
+    category = sanitize($("customCategoryInput").value).trim();
+  } else {
+    category = $("categorySelect").value;
+  }
+  var repeat = $("repeatSelect").value;
+  var memo = sanitize($("memoInput").value);
+
+  if (title.length < 1 || title.length > 60) { errorEl.textContent = "タイトルは1〜60字で入力してください。"; return; }
+  if (!isValidDateString(date)) { errorEl.textContent = "実在する締切日を入力してください（例：2月30日は登録できません）。"; return; }
+  if (!isValidTimeString(time)) { errorEl.textContent = "時刻は HH:MM で入力してください。"; return; }
+  if (category.length < 1 || category.length > 30) { errorEl.textContent = "カテゴリを入力してください（30字まで）。"; return; }
+  if (REPEATS.indexOf(repeat) === -1) { errorEl.textContent = "繰り返しの値が不正です。"; return; }
+  if (memo.length > 200) { errorEl.textContent = "メモは200字までです。"; return; }
+
+  var normalized = {
+    id: editingId || newId(),
+    title: title,
+    date: date,
+    time: time,
+    category: category,
+    repeat: repeat,
+    memo: memo,
+    completed: false,
+    doneThrough: ""
+  };
+
+  if (editingId) {
+    var existing = null;
+    items.forEach(function (x) { if (x.id === editingId) { existing = x; } });
+    if (existing) {
+      normalized.completed = repeat === "none" ? existing.completed : false;
+      normalized.doneThrough = repeat !== "none" && existing.date === date && existing.repeat === repeat ? (existing.doneThrough || "") : "";
+      var idx = items.indexOf(existing);
+      items[idx] = normalized;
+    } else {
+      items.push(normalized);
+    }
+  } else {
+    items.push(normalized);
+  }
+  saveItems();
+  resetForm();
+  render();
+}
+
+function textExportLines(now) {
+  return sortedItems(now).map(function (entry) {
+    var item = entry.item;
+    var line = formatDate(entry.effective) + " " + item.title + "（" + remainingLabel(item, entry.effective, now) + "）";
+    if (item.completed) { line += "（完了）"; }
+    return line;
+  }).join("\n") + "\n";
+}
+
+function init() {
+  loadItems();
+  $("categorySelect").addEventListener("change", onCategoryChange);
+  $("itemForm").addEventListener("submit", onSubmit);
+  $("cancelEditBtn").addEventListener("click", resetForm);
+  $("filterCategory").addEventListener("change", function (e) { filterCategory = e.target.value; render(); });
+  $("hideCompleted").addEventListener("change", function (e) { hideCompleted = e.target.checked; render(); });
+
+  $("exportJsonBtn").addEventListener("click", function () {
+    download("deadline-board.json", JSON.stringify(items, null, 2), "application/json");
+  });
+  $("exportTextBtn").addEventListener("click", function () {
+    download("deadline-board.txt", textExportLines(new Date()), "text/plain;charset=utf-8");
+  });
+  $("importBtn").addEventListener("click", function () { $("importFile").click(); });
+  $("importFile").addEventListener("change", function (e) {
+    var file = e.target.files && e.target.files[0];
+    if (!file) { return; }
+    var reader = new FileReader();
+    reader.onload = function () {
+      var parsed = null;
+      try { parsed = JSON.parse(String(reader.result)); } catch (err) { parsed = null; }
+      if (!Array.isArray(parsed)) {
+        window.alert("読み込めませんでした。JSONの配列データではありません。");
+        e.target.value = "";
+        return;
+      }
+      var valid = [];
+      var seen = {};
+      var bad = 0;
+      parsed.forEach(function (entry) {
+        var item = validateItem(entry);
+        if (item && !seen[item.id]) { seen[item.id] = true; valid.push(item); }
+        else { bad++; }
+      });
+      if (bad > 0) {
+        window.alert("不正なデータが " + bad + "件あったため、読み込みを中止しました。現在のデータは変更していません。");
+        e.target.value = "";
+        return;
+      }
+      if (!window.confirm("現在のデータを、読み込んだ " + valid.length + "件のデータに入れ替えます。よろしいですか？")) {
+        e.target.value = "";
+        return;
+      }
+      items = valid;
+      resetForm();
+      saveItems();
+      render();
+      e.target.value = "";
+    };
+    reader.onerror = function () {
+      window.alert("ファイルの読み込みに失敗しました。");
+      e.target.value = "";
+    };
+    reader.readAsText(file);
+  });
+
+  render();
+}
+
+init();
+</script>
+</body>
+</html>
